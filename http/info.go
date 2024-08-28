@@ -3,11 +3,7 @@ package http
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
-	"net/http"
 	"sanjieke/config"
-	"time"
 )
 
 type InfoResp struct {
@@ -70,31 +66,12 @@ type InfoResp struct {
 
 func GetInfo() (*InfoResp, error) {
 	// 创建一个新的 HTTP 请求
-	url := fmt.Sprintf("https://web-api.sanjieke.cn/b-side/api/web/study/0/%v/info", config.StudyId)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		log.Fatalf("Failed to create request: %v", err)
-	}
-	req.Header.Set("accept", "application/json, text/plain, */*")
-	setNormalHeader(req.Header)
-	// 创建一个 HTTP 客户端
-	client := &http.Client{
-		Timeout: time.Second * 10,
-	}
-	// 发送请求
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("Failed to send request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	all, err := io.ReadAll(resp.Body)
+	url := fmt.Sprintf("https://web-api.sanjieke.cn/b-side/api/web/study/0/%v/info", config.CourseId)
+	err, all := HttpGet(url)
 	if err != nil {
 		return nil, err
 	}
-
 	infoResp := new(InfoResp)
-
 	err = json.Unmarshal(all, infoResp)
 	if err != nil {
 		return nil, err
