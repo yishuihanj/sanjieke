@@ -141,10 +141,9 @@ func (d *Downloader) Start() error {
 			defer wg.Done()
 			err = d.download(tsIdx)
 			if err != nil {
-				// Back into the queue, retry request
-				fmt.Printf("下载失败 %s\n", err.Error())
+				fmt.Printf("视频下载失败 %s,放回下载队列后重试\n", err.Error())
 				if err := d.back(tsIdx); err != nil {
-					fmt.Printf(err.Error())
+					fmt.Printf("放回下载队列失败 %s\n", err.Error())
 				}
 			}
 			<-limitChan
@@ -205,8 +204,8 @@ func (d *Downloader) download(segIndex int) error {
 	if err != nil {
 		return err
 	}
+	//加入进度条，这个是协程安全的
 	_ = d.downloading.Add(1)
-
 	atomic.AddInt32(&d.finish, 1)
 	return nil
 }

@@ -13,6 +13,7 @@ import (
 )
 
 // 下载课程
+
 func downloadCourse() error {
 	infoResp, err := api.GetInfo()
 	if err != nil {
@@ -78,7 +79,7 @@ func downloadCourse() error {
 			log.Printf("课程[%v]没有找到视频", course.Name)
 			continue
 		}
-		dl, err := downloader.NewTask(path.Join(config.Config.OutDirectory, config.Config.Title), course.GetFileName(), m3u8Url, 3)
+		dl, err := downloader.NewTask(path.Join(config.Config.OutDirectory, config.Config.Title), course.GetFileName(), m3u8Url, 2)
 		if err != nil {
 			return err
 		}

@@ -71,7 +71,6 @@ func parse(reader io.Reader) (*M3u8, error) {
 	for s.Scan() {
 		lines = append(lines, s.Text())
 	}
-
 	var (
 		i     = 0
 		count = len(lines)

@@ -22,6 +22,7 @@ func DeleteFilesInDir(dir string) error {
 	})
 }
 
+// 判断目录是否存在，如果不存在则创建
 func EnsureDirExists(dirPath string) (error, bool) {
 	info, err := os.Stat(dirPath)
 	if os.IsNotExist(err) {
