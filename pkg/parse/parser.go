@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"sanjieke/downloader/m3u8/tool"
+	"sanjieke/pkg/httper"
+	"sanjieke/pkg/tool"
 )
 
 type Result struct {
@@ -20,7 +21,7 @@ func FromURL(link string) (*Result, error) {
 		return nil, err
 	}
 	link = u.String()
-	body, err := tool.Get(link)
+	err, body := httper.Get(link)
 	if err != nil {
 		return nil, fmt.Errorf("request m3u8 URL failed: %s", err.Error())
 	}
@@ -51,7 +52,7 @@ func FromURL(link string) (*Result, error) {
 			// Request URL to extract decryption key
 			keyURL := key.URI
 			keyURL = tool.ResolveURL(u, keyURL)
-			resp, err := tool.Get(keyURL)
+			err, resp := httper.Get(keyURL)
 			if err != nil {
 				return nil, fmt.Errorf("extract key failed: %s", err.Error())
 			}

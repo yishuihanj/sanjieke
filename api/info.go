@@ -1,9 +1,10 @@
-package http
+package api
 
 import (
 	"encoding/json"
 	"fmt"
 	"sanjieke/config"
+	"sanjieke/pkg/httper"
 )
 
 type InfoResp struct {
@@ -66,8 +67,8 @@ type InfoResp struct {
 
 func GetInfo() (*InfoResp, error) {
 	// 创建一个新的 HTTP 请求
-	url := fmt.Sprintf("https://web-api.sanjieke.cn/b-side/api/web/study/0/%v/info", config.CourseId)
-	err, all := HttpGet(url)
+	url := fmt.Sprintf("https://web-api.sanjieke.cn/b-side/api/web/study/0/%v/info", config.Config.CourseId)
+	err, all := httper.HttpGet(url)
 	if err != nil {
 		return nil, err
 	}

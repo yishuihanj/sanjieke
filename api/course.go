@@ -1,8 +1,9 @@
-package http
+package api
 
 import (
 	"encoding/json"
 	"fmt"
+	"sanjieke/pkg/httper"
 )
 
 type CourseNode struct {
@@ -41,7 +42,7 @@ type CourseNode struct {
 
 func GetCourseNode(nodeId int) (*CourseNode, error) {
 	url := fmt.Sprintf("https://web-api.sanjieke.cn/b-side/api/web/study/0/34003473/content/%v", nodeId)
-	err, body := HttpGet(url)
+	err, body := httper.HttpGet(url)
 	if err != nil {
 		return nil, err
 	}

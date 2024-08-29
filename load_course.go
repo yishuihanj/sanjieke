@@ -5,31 +5,29 @@ import (
 	"fmt"
 	"log"
 	"path"
+	"sanjieke/api"
 	"sanjieke/config"
-	"sanjieke/http"
+	"sanjieke/downloader"
+	"sanjieke/pkg/tool"
+	"time"
 )
 
-// 加载课程
-func loadCourse() error {
-	infoResp, err := http.GetInfo()
+// 下载课程
+func downloadCourse() error {
+	infoResp, err := api.GetInfo()
 	if err != nil {
 		return err
 	}
 	if infoResp.Code != 200 {
-		return errors.New("code not 200")
+		return fmt.Errorf("code not 200,msg:%v", infoResp.Msg)
 	}
 	if infoResp.Data.Title == "" {
 		return errors.New("title is empty")
 	}
-	config.Title = infoResp.Data.Title
-	fmt.Println("获取课程信息Title:", config.Title)
+	config.Config.Title = infoResp.Data.Title
+	fmt.Println("获取课程信息Title:", config.Config.Title)
 
-	err = ensureDirExists(path.Join(config.OutDirectory, config.Title))
-	if err != nil {
-		return fmt.Errorf("创建目录失败[%v]失败[%v]", config.OutDirectory, err.Error())
-	}
-
-	treeResp, err := http.GetTree()
+	treeResp, err := api.GetTree()
 	if err != nil {
 		return err
 	}
@@ -44,22 +42,20 @@ func loadCourse() error {
 			Name:      s.Name,
 			VideoList: make([]config.CourseVideo, 0),
 		}
-		config.CourseIdMap[s.NodeId] = course
-		config.CourseNameMap[s.Name] = course
-		config.CourseList = append(config.CourseList, course)
+		config.Config.CourseList = append(config.Config.CourseList, course)
 		if preCourse != nil {
 			course.NextCourse = preCourse
 		}
 		preCourse = course
 	}
 
-	////开始遍历下载视频
-	for _, course := range config.CourseList {
-		if FileExists(path.Join(config.OutDirectory, config.Title, course.GetFileName())) {
+	//开始遍历下载视频
+	for _, course := range config.Config.CourseList {
+		if tool.FileExists(path.Join(config.Config.OutDirectory, config.Config.Title, course.GetFileName())) {
 			fmt.Println("跳过已下载课程", course.Name)
 			continue
 		}
-		courseResp, err := http.GetCourseNode(course.NodeId)
+		courseResp, err := api.GetCourseNode(course.NodeId)
 		if err != nil {
 			return err
 		}
@@ -72,7 +68,7 @@ func loadCourse() error {
 				if m3u8Url == "" {
 					m3u8Url = s.Url
 				} else {
-					if s.ResolutionRatio == config.VideoQuality {
+					if s.ResolutionRatio == config.Config.VideoQuality {
 						m3u8Url = s.Url
 					}
 				}
@@ -82,7 +78,15 @@ func loadCourse() error {
 			log.Printf("课程[%v]没有找到视频", course.Name)
 			continue
 		}
-		//todo 下载视频
+		dl, err := downloader.NewTask(path.Join(config.Config.OutDirectory, config.Config.Title), course.GetFileName(), m3u8Url, 3)
+		if err != nil {
+			return err
+		}
+		err = dl.Start()
+		if err != nil {
+			return err
+		}
+		time.Sleep(time.Second * 1)
 	}
 	return nil
 }

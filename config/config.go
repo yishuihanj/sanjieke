@@ -2,21 +2,29 @@ package config
 
 import (
 	"fmt"
-	"sanjieke/downloader"
 )
 
-var (
-	Authorization string
-	Cookie        string
-	ApiKey        string
-	CourseId      string
+var Config *config
+
+func init() {
+	if Config == nil {
+		Config = &config{
+			CourseList:   make([]*Course, 0),
+			VideoQuality: "1080p",
+		}
+	}
+}
+
+type config struct {
+	Authorization string `yaml:"authorization"`
+	Cookie        string `yaml:"cookie"`
+	ApiKey        string `yaml:"sjk-apikey"`
+	CourseId      string `yaml:"course_id"`
 	Title         string
-	CourseIdMap   map[int]*Course    = make(map[int]*Course)
-	CourseNameMap map[string]*Course = make(map[string]*Course)
-	CourseList    []*Course          = make([]*Course, 0)
-	OutDirectory  string             = "./output" // 输出目录     string             = "" // 输出目录
-	VideoQuality  string             = "1080p"
-)
+	CourseList    []*Course
+	OutDirectory  string `yaml:"out_directory"`
+	VideoQuality  string
+}
 
 // Course 课程数据
 type Course struct {
@@ -27,7 +35,7 @@ type Course struct {
 }
 
 func (c *Course) GetFileName() string {
-	return fmt.Sprintf("%v%v", c.Name, downloader.TsExt)
+	return fmt.Sprintf("%v%v", c.Name, ".ts")
 }
 
 // CourseVideo 课程视频源

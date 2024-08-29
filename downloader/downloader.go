@@ -4,76 +4,131 @@ package downloader
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
-	"io/ioutil"
+	"github.com/schollz/progressbar/v3"
+	"io"
 	"os"
+	"path"
 	"path/filepath"
-	"sanjieke/m3u8/parse"
-	"sanjieke/m3u8/tool"
+	"sanjieke/pkg/deque"
+	"sanjieke/pkg/httper"
+	"sanjieke/pkg/parse"
+	"sanjieke/pkg/tool"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
 
-const (
-	TsExt            = ".ts"
-	tsFolderName     = "ts"
-	mergeTSFilename  = "main.ts"
-	tsTempFileSuffix = "_tmp"
-	progressWidth    = 40
-)
-
 type Downloader struct {
-	lock     sync.Mutex
-	queue    []int
-	folder   string
-	tsFolder string
-	finish   int32
-	segLen   int
+	lock        sync.Mutex
+	queue       *deque.Deque[int]
+	folder      string // output folder
+	fileName    string //  xxx.ts
+	finish      int32
+	segLen      int
+	tmpFolder   string // 临时文件目录
+	result      *parse.Result
+	concurrency int // 并发下载数量，不会超过切片的数量
 
-	result *parse.Result
+	downloading *progressbar.ProgressBar
 }
 
+const defaultConcurrency = 2
+
 // NewTask returns a Task instance
-func NewTask(output string, url string) (*Downloader, error) {
+func NewTask(output, downloadName, url string, concurrency int) (*Downloader, error) {
+	// check param
+	if output == "" {
+		return nil, fmt.Errorf("param output is empty")
+	}
+	if downloadName == "" {
+		return nil, fmt.Errorf("param downloadName is empty")
+	}
+	if url == "" {
+		return nil, fmt.Errorf("param url is empty")
+	}
 	result, err := parse.FromURL(url)
 	if err != nil {
 		return nil, err
 	}
-	var folder string
-	// If no output folder specified, use current directory
-	if output == "" {
-		current, err := tool.CurrentDir()
-		if err != nil {
-			return nil, err
-		}
-		folder = filepath.Join(current, output)
-	} else {
-		folder = output
-	}
-	if err := os.MkdirAll(folder, os.ModePerm); err != nil {
-		return nil, fmt.Errorf("create storage folder failed: %s", err.Error())
-	}
-	tsFolder := filepath.Join(folder, tsFolderName)
-	if err := os.MkdirAll(tsFolder, os.ModePerm); err != nil {
-		return nil, fmt.Errorf("create ts folder '[%s]' failed: %s", tsFolder, err.Error())
-	}
+
 	d := &Downloader{
-		folder:   folder,
-		tsFolder: tsFolder,
-		result:   result,
+		folder:      output,
+		fileName:    addTsIfNeeded(downloadName, ".ts"),
+		result:      result,
+		tmpFolder:   path.Join(output, ".m3u8temp"), //当前文件目录/temp
+		concurrency: concurrency,
 	}
-	d.segLen = len(result.M3u8.Segments)
-	d.queue = genSlice(d.segLen)
+	if d.concurrency <= 0 {
+		d.concurrency = defaultConcurrency
+	}
+
+	d.segLen = len(result.M3u8.Segments) // segment count
+	d.queue = genDeque(d.segLen)
 	return d, nil
 }
 
+func addTsIfNeeded(original, suffix string) string {
+	if !strings.HasSuffix(original, suffix) {
+		return original + suffix
+	}
+	return original
+}
+
+func (d *Downloader) initFolder() error {
+	//检测是否存在该目录，如果不存在则创建
+	err, _ := tool.EnsureDirExists(d.folder)
+	if err != nil {
+		return fmt.Errorf("create dir:[%v] err:[%v]", d.folder, err.Error())
+	}
+	return nil
+}
+
+// 清理文件目录，先
+func (d *Downloader) cleanTempFolder() error {
+	//检测是否存在该目录，如果不存在则创建
+	err, exist := tool.EnsureDirExists(d.tmpFolder)
+	if err != nil {
+		return fmt.Errorf("create dir:[%v] err:[%v]", d.tmpFolder, err.Error())
+	}
+	// 如果已经存在，则清除里面的文件
+	if exist {
+		err = tool.DeleteFilesInDir(d.tmpFolder)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Start runs downloader
-func (d *Downloader) Start(concurrency int) error {
+func (d *Downloader) Start() error {
+	fmt.Println("开始下载", d.fileName)
+	// 检测是否存在folder
+	if err := d.initFolder(); err != nil {
+		return err
+	}
+	//检测文件是否已经存在
+	if tool.FileExists(path.Join(d.folder, d.fileName)) {
+		fmt.Printf("%v ==> had exist\n", d.fileName)
+		return nil
+	}
+	// 检测是否存在临时目录，如果不存在则创建
+	if err := d.cleanTempFolder(); err != nil {
+		return err
+	}
+
 	var wg sync.WaitGroup
-	// struct{} zero size
-	limitChan := make(chan struct{}, concurrency)
+	// 限制并发下载数量
+	limitChan := make(chan struct{}, d.concurrency)
+	d.downloading = progressbar.Default(
+		int64(d.segLen),
+		fmt.Sprintf("正在下载 %v", d.fileName),
+	)
 	for {
+		//获取一个切片的index
 		tsIdx, end, err := d.next()
 		if err != nil {
 			if end {
@@ -84,10 +139,11 @@ func (d *Downloader) Start(concurrency int) error {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			if err := d.download(idx); err != nil {
+			err = d.download(tsIdx)
+			if err != nil {
 				// Back into the queue, retry request
-				fmt.Printf("[failed] %s\n", err.Error())
-				if err := d.back(idx); err != nil {
+				fmt.Printf("下载失败 %s\n", err.Error())
+				if err := d.back(tsIdx); err != nil {
 					fmt.Printf(err.Error())
 				}
 			}
@@ -102,22 +158,23 @@ func (d *Downloader) Start(concurrency int) error {
 	return nil
 }
 
+// 下载切片,将切片先下载到临时目录，然后等待合并
 func (d *Downloader) download(segIndex int) error {
-	tsFilename := tsFilename(segIndex)
 	tsUrl := d.tsURL(segIndex)
-	b, e := tool.Get(tsUrl)
+	e, b := httper.Get(tsUrl)
 	if e != nil {
 		return fmt.Errorf("request %s, %s", tsUrl, e.Error())
 	}
-	//noinspection GoUnhandledErrorResult
 	defer b.Close()
-	fPath := filepath.Join(d.tsFolder, tsFilename)
-	fTemp := fPath + tsTempFileSuffix
-	f, err := os.Create(fTemp)
+	tmpFileName := d.segIndexTsTmpName(segIndex)
+	fPath := filepath.Join(d.tmpFolder, tmpFileName)
+	f, err := os.Create(fPath)
 	if err != nil {
-		return fmt.Errorf("create file: %s, %s", tsFilename, err.Error())
+		return fmt.Errorf("create file: %s, %s", tmpFileName, err.Error())
 	}
-	bytes, err := ioutil.ReadAll(b)
+	defer f.Close()
+
+	src, err := io.ReadAll(b)
 	if err != nil {
 		return fmt.Errorf("read bytes: %s, %s", tsUrl, err.Error())
 	}
@@ -127,7 +184,7 @@ func (d *Downloader) download(segIndex int) error {
 	}
 	key, ok := d.result.Keys[sf.KeyIndex]
 	if ok && key != "" {
-		bytes, err = tool.AES128Decrypt(bytes, []byte(key),
+		src, err = tool.AES128Decrypt(src, []byte(key),
 			[]byte(d.result.M3u8.Keys[sf.KeyIndex].IV))
 		if err != nil {
 			return fmt.Errorf("decryt: %s, %s", tsUrl, err.Error())
@@ -137,33 +194,27 @@ func (d *Downloader) download(segIndex int) error {
 	// Some TS files do not start with SyncByte 0x47, they can not be played after merging,
 	// Need to remove the bytes before the SyncByte 0x47(71).
 	syncByte := uint8(71) //0x47
-	bLen := len(bytes)
+	bLen := len(src)
 	for j := 0; j < bLen; j++ {
-		if bytes[j] == syncByte {
-			bytes = bytes[j:]
+		if src[j] == syncByte {
+			src = src[j:]
 			break
 		}
 	}
-	w := bufio.NewWriter(f)
-	if _, err := w.Write(bytes); err != nil {
-		return fmt.Errorf("write to %s: %s", fTemp, err.Error())
-	}
-	// Release file resource to rename file
-	_ = f.Close()
-	if err = os.Rename(fTemp, fPath); err != nil {
+	_, err = io.Copy(io.MultiWriter(f), bytes.NewReader(src))
+	if err != nil {
 		return err
 	}
-	// Maybe it will be safer in this way...
+	_ = d.downloading.Add(1)
+
 	atomic.AddInt32(&d.finish, 1)
-	//tool.DrawProgressBar("Downloading", float32(d.finish)/float32(d.segLen), progressWidth)
-	fmt.Printf("[download %6.2f%%] %s\n", float32(d.finish)/float32(d.segLen)*100, tsUrl)
 	return nil
 }
 
 func (d *Downloader) next() (segIndex int, end bool, err error) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	if len(d.queue) == 0 {
+	if d.queue.Len() == 0 {
 		err = fmt.Errorf("queue empty")
 		if d.finish == int32(d.segLen) {
 			end = true
@@ -173,8 +224,7 @@ func (d *Downloader) next() (segIndex int, end bool, err error) {
 		end = false
 		return
 	}
-	segIndex = d.queue[0]
-	d.queue = d.queue[1:]
+	segIndex = d.queue.PopFront()
 	return
 }
 
@@ -184,16 +234,17 @@ func (d *Downloader) back(segIndex int) error {
 	if sf := d.result.M3u8.Segments[segIndex]; sf == nil {
 		return fmt.Errorf("invalid segment index: %d", segIndex)
 	}
-	d.queue = append(d.queue, segIndex)
+	d.queue.PushBack(segIndex)
 	return nil
 }
 
+// 当切片全部下载完毕后，合并切片
 func (d *Downloader) merge() error {
-	// In fact, the number of downloaded segments should be equal to number of m3u8 segments
+	//检测是否有丢失的文件
 	missingCount := 0
 	for idx := 0; idx < d.segLen; idx++ {
-		tsFilename := tsFilename(idx)
-		f := filepath.Join(d.tsFolder, tsFilename)
+		tsFilename := d.segIndexTsTmpName(idx)
+		f := filepath.Join(d.tmpFolder, tsFilename)
 		if _, err := os.Stat(f); err != nil {
 			missingCount++
 		}
@@ -201,39 +252,32 @@ func (d *Downloader) merge() error {
 	if missingCount > 0 {
 		fmt.Printf("[warning] %d files missing\n", missingCount)
 	}
-
-	// Create a TS file for merging, all segment files will be written to this file.
-	mFilePath := filepath.Join(d.folder, mergeTSFilename)
+	mFilePath := filepath.Join(d.folder, d.fileName)
 	mFile, err := os.Create(mFilePath)
 	if err != nil {
 		return fmt.Errorf("create main TS file failed：%s", err.Error())
 	}
-	//noinspection GoUnhandledErrorResult
 	defer mFile.Close()
-
+	bar := progressbar.Default(int64(d.segLen), fmt.Sprintf("正在合并 %v", d.fileName))
 	writer := bufio.NewWriter(mFile)
 	mergedCount := 0
 	for segIndex := 0; segIndex < d.segLen; segIndex++ {
-		tsFilename := tsFilename(segIndex)
-		bytes, err := ioutil.ReadFile(filepath.Join(d.tsFolder, tsFilename))
-		_, err = writer.Write(bytes)
+		tsFilename := d.segIndexTsTmpName(segIndex)
+		src, err := os.ReadFile(filepath.Join(d.tmpFolder, tsFilename))
+		_, err = writer.Write(src)
 		if err != nil {
 			continue
 		}
 		mergedCount++
-		tool.DrawProgressBar("merge",
-			float32(mergedCount)/float32(d.segLen), progressWidth)
+		_ = bar.Add(1)
 	}
 	_ = writer.Flush()
-	// Remove `ts` folder
-	_ = os.RemoveAll(d.tsFolder)
-
+	//删除临时目录
+	_ = os.RemoveAll(d.tmpFolder)
 	if mergedCount != d.segLen {
 		fmt.Printf("[warning] \n%d files merge failed", d.segLen-mergedCount)
 	}
-
-	fmt.Printf("\n[output] %s\n", mFilePath)
-
+	fmt.Printf("下载完成 %v\n", d.fileName)
 	return nil
 }
 
@@ -242,14 +286,16 @@ func (d *Downloader) tsURL(segIndex int) string {
 	return tool.ResolveURL(d.result.URL, seg.URI)
 }
 
-func tsFilename(ts int) string {
-	return strconv.Itoa(ts) + TsExt
+// 每个切片的tmp文件名
+// 下载的文件名称_segIndex.ts_tmp
+func (d *Downloader) segIndexTsTmpName(segIndex int) string {
+	return fmt.Sprintf("%v_%v%v", d.fileName, strconv.Itoa(segIndex), "_tmp")
 }
 
-func genSlice(len int) []int {
-	s := make([]int, 0)
+func genDeque(len int) *deque.Deque[int] {
+	d := deque.New[int](len)
 	for i := 0; i < len; i++ {
-		s = append(s, i)
+		d.PushBack(i)
 	}
-	return s
+	return d
 }

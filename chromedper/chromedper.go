@@ -7,10 +7,11 @@ import (
 	"github.com/chromedp/chromedp"
 	"log"
 	"regexp"
-	"sanjieke/config"
 	"strings"
 	"time"
 )
+
+// todo 暂时弃用
 
 var (
 	ctx    context.Context
@@ -50,10 +51,10 @@ func Login() error {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`input[type="text"][placeholder="输入手机号"]`, chromedp.ByQuery),
-		chromedp.SendKeys(`input[type="text"][placeholder="输入手机号"]`, "15732158959", chromedp.ByQuery),
+		chromedp.SendKeys(`input[type="text"][placeholder="输入手机号"]`, "xxxxx", chromedp.ByQuery),
 
 		chromedp.WaitVisible(`input[type="password"][placeholder="输入密码"]`, chromedp.ByQuery),
-		chromedp.SendKeys(`input[type="password"][placeholder="输入密码"]`, "hanjie123", chromedp.ByQuery),
+		chromedp.SendKeys(`input[type="password"][placeholder="输入密码"]`, "kkkkkk", chromedp.ByQuery),
 
 		chromedp.WaitVisible(`input[name="denglu_page_denglu"]`, chromedp.ByQuery), // 等待元素可见
 		chromedp.Click(`input[name="denglu_page_denglu"]`, chromedp.ByQuery),       // 点击按钮
@@ -175,13 +176,13 @@ func checkHeader(headers network.Headers) {
 	if ok && apiKey == "" {
 		apiKey = api.(string)
 	}
-	if authorization != "" && cookie != "" && apiKey != "" {
-		config.Authorization = authorization
-		config.Cookie = cookie
-		config.ApiKey = apiKey
-		config.StudyId = studyId
-		ch <- struct{}{}
-	}
+	//if authorization != "" && cookie != "" && apiKey != "" {
+	//	config.Authorization = authorization
+	//	config.Cookie = cookie
+	//	config.ApiKey = apiKey
+	//	config.StudyId = studyId
+	//	ch <- struct{}{}
+	//}
 }
 
 func ClearCache() {

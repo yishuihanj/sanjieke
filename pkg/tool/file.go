@@ -1,7 +1,6 @@
 package tool
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,15 +12,12 @@ func DeleteFilesInDir(dir string) error {
 		if err != nil {
 			return err
 		}
-
 		// 如果不是目录，删除文件
 		if !d.IsDir() {
 			if err := os.Remove(path); err != nil {
 				return err
 			}
-			fmt.Println("Deleted:", path)
 		}
-
 		return nil
 	})
 }

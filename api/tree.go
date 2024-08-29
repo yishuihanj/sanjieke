@@ -1,15 +1,16 @@
-package http
+package api
 
 import (
 	"encoding/json"
 	"fmt"
 	"sanjieke/config"
+	"sanjieke/pkg/httper"
 )
 
 func GetTree() (*TreeResp, error) {
 	// 创建一个新的 HTTP 请求
-	url := fmt.Sprintf("https://web-api.sanjieke.cn/b-side/api/web/study/0/%v/content/tree", config.CourseId)
-	err, all := HttpGet(url)
+	url := fmt.Sprintf("https://web-api.sanjieke.cn/b-side/api/web/study/0/%v/content/tree", config.Config.CourseId)
+	err, all := httper.HttpGet(url)
 	if err != nil {
 		return nil, err
 	}
