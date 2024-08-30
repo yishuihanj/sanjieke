@@ -23,8 +23,12 @@ func main() {
 
 }
 func mainLoop(c *cli.Context) error {
+	if cmdFlags.Ffmpeg != "" {
+		config.Config.FfmpegPath = cmdFlags.Ffmpeg
+	}
+
 	if cmdFlags.Config != "" {
-		err := pkg.YamlReader("./config.yaml", config.Config)
+		err := pkg.YamlReader(cmdFlags.Config, config.Config)
 		if err != nil {
 			return fmt.Errorf("读取配置文件错误:%v", err.Error())
 		}
@@ -32,6 +36,10 @@ func mainLoop(c *cli.Context) error {
 		if !checkInputConfig() {
 			return fmt.Errorf("请检查输入参数")
 		}
+	}
+
+	if config.Config.FfmpegPath == "" {
+		return fmt.Errorf("请检查ffmpeg路径")
 	}
 
 	err := downloadCourse()

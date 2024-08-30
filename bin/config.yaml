@@ -5,6 +5,8 @@ out_directory: ""
 # api-key
 sjk-apikey: ""
 
+cookie: ""
+
 authorization: ""
 
-cookie: ""
+ffmpeg_path: "./ffmpge.exe"

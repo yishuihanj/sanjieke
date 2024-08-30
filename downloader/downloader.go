@@ -3,7 +3,6 @@
 package downloader
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"github.com/schollz/progressbar/v3"
@@ -22,6 +21,7 @@ import (
 )
 
 type Downloader struct {
+	url         string
 	lock        sync.Mutex
 	queue       *deque.Deque[int]
 	folder      string // output folder
@@ -49,24 +49,17 @@ func NewTask(output, downloadName, url string, concurrency int) (*Downloader, er
 	if url == "" {
 		return nil, fmt.Errorf("param url is empty")
 	}
-	result, err := parse.FromURL(url)
-	if err != nil {
-		return nil, err
-	}
 
 	d := &Downloader{
 		folder:      output,
-		fileName:    addTsIfNeeded(downloadName, ".ts"),
-		result:      result,
+		url:         url,
+		fileName:    addTsIfNeeded(downloadName, ".mp4"),
 		tmpFolder:   path.Join(output, ".m3u8temp"), //当前文件目录/temp
 		concurrency: concurrency,
 	}
 	if d.concurrency <= 0 {
 		d.concurrency = defaultConcurrency
 	}
-
-	d.segLen = len(result.M3u8.Segments) // segment count
-	d.queue = genDeque(d.segLen)
 	return d, nil
 }
 
@@ -105,26 +98,35 @@ func (d *Downloader) cleanTempFolder() error {
 
 // Start runs downloader
 func (d *Downloader) Start() error {
-	fmt.Println("开始下载", d.fileName)
 	// 检测是否存在folder
 	if err := d.initFolder(); err != nil {
 		return err
 	}
 	//检测文件是否已经存在
 	if tool.FileExists(path.Join(d.folder, d.fileName)) {
-		fmt.Printf("%v ==> had exist\n", d.fileName)
+		fmt.Printf("%v ==> 文件已存在，跳过\n", d.fileName)
 		return nil
 	}
+	fmt.Println("开始下载", d.fileName)
 	// 检测是否存在临时目录，如果不存在则创建
 	if err := d.cleanTempFolder(); err != nil {
 		return err
 	}
 
+	result, err := parse.FromURL(d.url)
+	if err != nil {
+		return err
+	}
+
+	d.result = result
+	d.segLen = len(result.M3u8.Segments) // segment count
+	d.queue = genDeque(d.segLen)
+
 	var wg sync.WaitGroup
 	// 限制并发下载数量
 	limitChan := make(chan struct{}, d.concurrency)
 	d.downloading = progressbar.Default(
-		int64(d.segLen),
+		int64(d.segLen+1), //这个1是合并的
 		fmt.Sprintf("正在下载 %v", d.fileName),
 	)
 	for {
@@ -251,31 +253,16 @@ func (d *Downloader) merge() error {
 	if missingCount > 0 {
 		fmt.Printf("[warning] %d files missing\n", missingCount)
 	}
-	mFilePath := filepath.Join(d.folder, d.fileName)
-	mFile, err := os.Create(mFilePath)
+
+	// 使用ffmpeg合并切片为mp4格式
+	err := d.genMp4()
 	if err != nil {
-		return fmt.Errorf("create main TS file failed：%s", err.Error())
+		return err
 	}
-	defer mFile.Close()
-	bar := progressbar.Default(int64(d.segLen), fmt.Sprintf("正在合并 %v", d.fileName))
-	writer := bufio.NewWriter(mFile)
-	mergedCount := 0
-	for segIndex := 0; segIndex < d.segLen; segIndex++ {
-		tsFilename := d.segIndexTsTmpName(segIndex)
-		src, err := os.ReadFile(filepath.Join(d.tmpFolder, tsFilename))
-		_, err = writer.Write(src)
-		if err != nil {
-			continue
-		}
-		mergedCount++
-		_ = bar.Add(1)
-	}
-	_ = writer.Flush()
+
 	//删除临时目录
 	_ = os.RemoveAll(d.tmpFolder)
-	if mergedCount != d.segLen {
-		fmt.Printf("[warning] \n%d files merge failed", d.segLen-mergedCount)
-	}
+
 	fmt.Printf("下载完成 %v\n", d.fileName)
 	return nil
 }

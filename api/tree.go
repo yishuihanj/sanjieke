@@ -26,23 +26,22 @@ func GetTree() (*TreeResp, error) {
 type TreeResp struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
-	Data struct {
-		Tree []struct {
-			NodeId    int    `json:"nodeId"`
-			Name      string `json:"name"`
-			Type      string `json:"type"`
-			Attribute struct {
-				IsFinish      int      `json:"isFinish"`
-				Obligatory    int      `json:"obligatory"`
-				Type          string   `json:"type"`
-				IsCurrentNode int      `json:"isCurrentNode"`
-				ContentTypes  []string `json:"contentTypes"`
-			} `json:"attribute"`
-			Children      interface{} `json:"children"`
-			UnLockTime    interface{} `json:"unLockTime"`
-			IsUnLock      int         `json:"isUnLock"`
-			VideoDuration int         `json:"videoDuration"`
-			ExamCount     int         `json:"examCount"`
-		} `json:"tree"`
-	} `json:"data"`
+	Data *Data  `json:"data"`
+}
+
+// 视频属性
+type Attribute struct {
+	Type         string   `json:"type"` //只有 video 才下载
+	ContentTypes []string `json:"contentTypes"`
+}
+type TreeNode struct {
+	NodeID     int         `json:"nodeId"`
+	Name       string      `json:"name"`
+	Type       string      `json:"type"`
+	Attribute  *Attribute  `json:"attribute"` //课程属性
+	Children   []*TreeNode `json:"children"`  //一节课程有多个小课程
+	ParentTree *TreeNode   // 父节点
+}
+type Data struct {
+	Trees []*TreeNode `json:"tree"`
 }
