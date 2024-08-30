@@ -68,7 +68,7 @@ func checkTreeVideo(tree *api.TreeNode) error {
 
 func downloadVideoAttribute(tree *api.TreeNode) error {
 	if tree == nil || tree.Attribute == nil {
-		fmt.Printf("课程:%v 没有可下载的视频，跳过", tree.Name)
+		fmt.Printf("课程:%v 没有可下载的视频，跳过\n", tree.Name)
 		return nil
 	}
 	isVideo := false
@@ -79,7 +79,7 @@ func downloadVideoAttribute(tree *api.TreeNode) error {
 		}
 	}
 	if !isVideo {
-		fmt.Printf("课程:%v 没有可下载的视频，跳过", tree.Name)
+		fmt.Printf("课程:%v 没有可下载的视频，跳过\n", tree.Name)
 		return nil
 	}
 

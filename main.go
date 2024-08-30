@@ -47,5 +47,7 @@ func mainLoop(c *cli.Context) error {
 		return fmt.Errorf("下载课程错误:%v", err.Error())
 	}
 
+	fmt.Printf("课程 [%v] 全部下载完成，再见！\n", config.Config.Title)
+
 	return nil
 }
