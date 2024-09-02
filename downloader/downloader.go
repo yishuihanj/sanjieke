@@ -35,6 +35,10 @@ type Downloader struct {
 	downloading *progressbar.ProgressBar
 }
 
+func (d *Downloader) GetFileName() string {
+	return d.fileName
+}
+
 const defaultConcurrency = 2
 
 // NewTask returns a Task instance
@@ -103,7 +107,7 @@ func (d *Downloader) Start() error {
 		return err
 	}
 	//检测文件是否已经存在
-	if tool.FileExists(path.Join(d.folder, d.fileName)) {
+	if tool.CheckFileExists(path.Join(d.folder, d.fileName)) {
 		fmt.Printf("%v ==> 文件已存在，跳过\n", d.fileName)
 		return nil
 	}

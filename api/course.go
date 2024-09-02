@@ -14,10 +14,10 @@ type CourseResp struct {
 }
 
 type CourseData struct {
-	Nodes []*CourseNodes `json:"nodes"`
+	Nodes []*CourseNode `json:"nodes"`
 }
 
-type CourseNodes struct {
+type CourseNode struct {
 	ContentType  string        `json:"contentType"`  // b-video 为视频 html为文本
 	HTMLContent  any           `json:"htmlContent"`  // 如果是html，则有此字段，
 	VideoContent *VideoContent `json:"videoContent"` //如果是video，则有此字段，

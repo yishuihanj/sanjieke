@@ -1,75 +1,162 @@
 package markdown
 
+//引用于 github.com/nicoxiang/geektime-downloader
+
 import (
-	"encoding/json"
-	"fmt"
+	"context"
+	"errors"
 	md "github.com/JohannesKaufmann/html-to-markdown"
-	"log"
+	"github.com/PuerkitoBio/goquery"
+	"net/url"
 	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"sanjieke/pkg/downloader"
+	"sanjieke/pkg/filenamify"
+	"sanjieke/pkg/tool"
+	"strings"
+	"sync"
 )
 
-type Node struct {
-	ContentType            string  `json:"contentType"`
-	ContentId              *int    `json:"contentId"`
-	HtmlContent            string  `json:"htmlContent"`
-	VideoContent           *string `json:"videoContent"`
-	ProgramQuestionContent *string `json:"programQuestionContent"`
-	QuestionContent        *string `json:"questionContent"`
+var (
+	converter *md.Converter
+	imgRegexp = regexp.MustCompile(`!\[(.*?)]\((.*?)\)`)
+)
+
+// MDExtension ...
+const MDExtension = ".md"
+
+type markdownString struct {
+	sync.Mutex
+	s string
 }
 
-type Resp struct {
-	Data *Data `json:"data"`
+func (ms *markdownString) ReplaceAll(o, n string) {
+	ms.Lock()
+	defer ms.Unlock()
+	ms.s = strings.ReplaceAll(ms.s, o, n)
 }
 
-type Data struct {
-	Nodes []Node `json:"nodes"`
-}
-
-func htm(html string) string {
-	opt := &md.Options{
-		EscapeMode: "basic", // default
+// Download article as markdown
+func Download(ctx context.Context, content, title, dir string, overwrite bool) (bool, error) {
+	select {
+	case <-ctx.Done():
+		return false, context.Canceled
+	default:
 	}
-	converter := md.NewConverter("", true, opt)
-	markdown, err := converter.ConvertString(html)
+
+	fullName := path.Join(dir, filenamify.Filenamify(title)+MDExtension)
+	if tool.CheckFileExists(fullName) && !overwrite {
+		return true, nil
+	}
+
+	// step1: convert to md string
+	// 添加自定义转换规则来处理 video 标签
+	getDefaultConverter().AddRules(md.Rule{
+		Filter: []string{"video"},
+		Replacement: func(content string, sel *goquery.Selection, options *md.Options) *string {
+			// 获取 video 标签的原始 HTML 内容
+			var buf strings.Builder
+			sel.Each(func(i int, s *goquery.Selection) {
+				// 开始构建 <video> 标签
+				buf.WriteString("<video")
+				// 添加 video 标签的属性
+				for _, attr := range s.Nodes[0].Attr {
+					buf.WriteString(" " + attr.Key + "=\"" + attr.Val + "\"")
+				}
+				buf.WriteString(">")
+				// 添加标签内的 HTML 内容
+				htmlContent, _ := s.Html()
+				buf.WriteString(htmlContent)
+				buf.WriteString("</video>")
+			})
+
+			result := buf.String()
+			return &result
+		},
+	})
+	markdown, err := getDefaultConverter().ConvertString(content)
 	if err != nil {
-		log.Fatal(err)
+		return false, err
 	}
-	return markdown + "\n\n"
+
+	// step2: download images
+	var ss = &markdownString{s: markdown}
+	imageURLs := findAllImages(markdown)
+
+	// images/aid/imageName.png
+	imagesFolder := filepath.Join(dir, "图片")
+
+	if _, err := os.Stat(imagesFolder); errors.Is(err, os.ErrNotExist) {
+		os.MkdirAll(imagesFolder, os.ModePerm)
+	}
+
+	err = writeImageFile(ctx, imageURLs, dir, imagesFolder, ss)
+
+	if err != nil {
+		return false, err
+	}
+
+	f, err := os.Create(fullName)
+	defer func() {
+		_ = f.Close()
+	}()
+	if err != nil {
+		return false, err
+	}
+	// step3: write md file
+	_, err = f.WriteString("# " + title + "\n" + ss.s)
+	if err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
-func main() {
-	resp := new(Resp)
-	err := json.Unmarshal([]byte(str), resp)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	// 创建Markdown文件
-	file, err := os.Create("output.md")
-	if err != nil {
-		fmt.Println("Error creating file:", err)
-		return
-	}
-	defer file.Close()
-
-	for _, node := range resp.Data.Nodes {
-		if node.ContentType == "html" {
-			//markdown, err := htmlToMarkdown(node.HtmlContent)
-			//if err != nil {
-			//	fmt.Println("Error converting HTML to Markdown:", err)
-			//	continue
-			//}
-
-			markdown := htm(node.HtmlContent)
-
-			// 将Markdown内容写入文件
-			_, err = file.WriteString(markdown)
-			if err != nil {
-				fmt.Println("Error writing to file:", err)
-				return
+func findAllImages(md string) (images []string) {
+	for _, matches := range imgRegexp.FindAllStringSubmatch(md, -1) {
+		if len(matches) == 3 {
+			s := matches[2]
+			_, err := url.ParseRequestURI(s)
+			if err == nil {
+				images = append(images, s)
 			}
+			// sometime exists broken image url, just ignore
 		}
 	}
+	return
+}
 
-	fmt.Println("Markdown content successfully written to output.md")
+func getDefaultConverter() *md.Converter {
+	if converter == nil {
+		converter = md.NewConverter("", true, nil)
+	}
+	return converter
+}
+
+func writeImageFile(ctx context.Context,
+	imageURLs []string,
+	dir,
+	imagesFolder string,
+	ms *markdownString,
+) (err error) {
+	for _, imageURL := range imageURLs {
+		segments := strings.Split(imageURL, "/")
+		f := segments[len(segments)-1]
+		if i := strings.Index(f, "?"); i > 0 {
+			f = f[:i]
+		}
+		imageLocalFullPath := filepath.Join(imagesFolder, f)
+
+		headers := make(map[string]string, 0)
+		_, err = downloader.DownloadFileConcurrently(ctx, imageLocalFullPath, imageURL, headers, 1)
+
+		if err != nil {
+			return err
+		}
+
+		rel, _ := filepath.Rel(dir, imageLocalFullPath)
+		ms.ReplaceAll(imageURL, filepath.ToSlash(rel))
+	}
+	return nil
 }

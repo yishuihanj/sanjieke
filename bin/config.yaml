@@ -9,4 +9,5 @@ cookie: ""
 
 authorization: ""
 
+#ffmpeg执行文件的位置，默认在项目bin里面
 ffmpeg_path: "./ffmpge.exe"

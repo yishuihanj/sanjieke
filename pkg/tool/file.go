@@ -4,6 +4,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode"
 )
 
 func DeleteFilesInDir(dir string) error {
@@ -42,10 +44,31 @@ func EnsureDirExists(dirPath string) (error, bool) {
 }
 
 // 检测文件是否存在
-func FileExists(filePath string) bool {
+func CheckFileExists(filePath string) bool {
 	info, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
 		return false
 	}
 	return !info.IsDir()
+}
+
+// makeValidFilename 将不合法的文件名字符替换为合法字符（下划线）
+func MakeValidFilename(filename string) string {
+	var result strings.Builder
+
+	for _, r := range filename {
+		if isValidFilenameChar(r) {
+			result.WriteRune(r)
+		} else {
+			result.WriteRune('_')
+		}
+	}
+
+	return result.String()
+}
+
+// isValidFilenameChar 判断字符是否为合法的文件名字符
+func isValidFilenameChar(r rune) bool {
+	// 合法字符可以包括字母、数字和一些符号（例如 -、_ 和 .）
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == '.'
 }

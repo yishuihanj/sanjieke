@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path"
 	"sanjieke/api"
 	"sanjieke/config"
 	"sanjieke/downloader"
+	"sanjieke/pkg/markdown"
+	"sanjieke/pkg/tool"
 )
 
 // 下载课程
@@ -50,7 +53,7 @@ func checkTreeVideo(tree *api.TreeNode) error {
 		return nil
 	}
 	fmt.Println("检测课程", tree.Name)
-	err := downloadVideoAttribute(tree)
+	err := downloadAttribute(tree)
 	if err != nil {
 		return err
 	}
@@ -66,23 +69,11 @@ func checkTreeVideo(tree *api.TreeNode) error {
 	return nil
 }
 
-func downloadVideoAttribute(tree *api.TreeNode) error {
+func downloadAttribute(tree *api.TreeNode) error {
 	if tree == nil || tree.Attribute == nil {
 		fmt.Printf("课程:%v 没有可下载的视频，跳过\n", tree.Name)
 		return nil
 	}
-	isVideo := false
-	for _, t := range tree.Attribute.ContentTypes {
-		if t == "video" {
-			isVideo = true
-			break
-		}
-	}
-	if !isVideo {
-		fmt.Printf("课程:%v 没有可下载的视频，跳过\n", tree.Name)
-		return nil
-	}
-
 	//获取课程详细信息
 	resp, err := api.GetCourseNode(tree.NodeID)
 	if err != nil {
@@ -105,46 +96,77 @@ func downloadVideoAttribute(tree *api.TreeNode) error {
 	}
 	// 倒序遍历
 	for i := len(names) - 1; i >= 0; i-- {
+		names[i] = tool.MakeValidFilename(names[i])
 		downFolder = path.Join(downFolder, names[i])
 	}
 	videoIndex := 0
+	content := ""
 	for _, node := range resp.Data.Nodes {
-		// 如果内容类型不是视频，则跳过
-		if node.ContentType != "b-video" {
-			continue
-		}
-		if node.VideoContent == nil {
-			continue
-		}
-		// 如果视频列表为空，则跳过
-		if len(node.VideoContent.ResolutionRatioObjList) == 0 {
-			continue
-		}
-		video := node.VideoContent.ResolutionRatioObjList[0]
-		// 获取符合的视频之类和视频连接
-		for _, v := range node.VideoContent.ResolutionRatioObjList {
-			if v.ResolutionRatio == config.Config.VideoQuality {
-				video = v
+		switch node.ContentType {
+		case "b-video":
+			err, fileName := downVideoCourseNode(downFolder, videoIndex, tree, node)
+			if err != nil {
+				return err
 			}
-		}
-		//如果下载的地址为空，则跳过
-		if video.URL == "" {
-			continue
-		}
-		exs := ""
-		if videoIndex > 0 {
-			exs = fmt.Sprintf("_%v", videoIndex)
-		}
-		videoIndex++
-		fileName := fmt.Sprintf("%v%v", tree.Name, exs)
-		task, err := downloader.NewTask(downFolder, fileName, video.URL, 2)
-		if err != nil {
-			return err
-		}
-		err = task.Start()
-		if err != nil {
-			return err
+			if fileName == "" {
+				continue
+			}
+			content += genVideoMarkdown(fileName)
+		case "html":
+			content += fmt.Sprintf("%v", node.HTMLContent)
 		}
 	}
+
+	if content == "" {
+		return nil
+	}
+	_, err = markdown.Download(context.Background(), content, tree.Name, downFolder, false)
+	if err != nil {
+		return err
+	}
 	return nil
+}
+
+func genVideoMarkdown(fileName string) string {
+	return fmt.Sprintf(`<video src="视频/%v" controls></video>`, fileName)
+}
+
+func downVideoCourseNode(downFolder string, videoIndex int, tree *api.TreeNode, node *api.CourseNode) (error, string) {
+	// 如果内容类型不是视频，则跳过
+	if node.ContentType != "b-video" {
+		return nil, ""
+	}
+	if node.VideoContent == nil {
+		return nil, ""
+	}
+	// 如果视频列表为空，则跳过
+	if len(node.VideoContent.ResolutionRatioObjList) == 0 {
+		return nil, ""
+	}
+	video := node.VideoContent.ResolutionRatioObjList[0]
+	// 获取符合的视频之类和视频连接
+	for _, v := range node.VideoContent.ResolutionRatioObjList {
+		if v.ResolutionRatio == config.Config.VideoQuality {
+			video = v
+		}
+	}
+	//如果下载的地址为空，则跳过
+	if video.URL == "" {
+		return nil, ""
+	}
+	exs := ""
+	if videoIndex > 0 {
+		exs = fmt.Sprintf("_%v", videoIndex)
+	}
+	fileName := tool.MakeValidFilename(fmt.Sprintf("%v%v", tree.Name, exs))
+	downFolder = path.Join(downFolder, "视频")
+	task, err := downloader.NewTask(downFolder, fileName, video.URL, 2)
+	if err != nil {
+		return err, ""
+	}
+	err = task.Start()
+	if err != nil {
+		return err, ""
+	}
+	return nil, task.GetFileName()
 }
