@@ -10,6 +10,7 @@ import (
 	"sanjieke/downloader"
 	"sanjieke/pkg/markdown"
 	"sanjieke/pkg/tool"
+	"strings"
 )
 
 // 下载课程
@@ -100,7 +101,9 @@ func downloadAttribute(tree *api.TreeNode) error {
 		downFolder = path.Join(downFolder, names[i])
 	}
 	videoIndex := 0
-	content := ""
+
+	var builder strings.Builder
+
 	for _, node := range resp.Data.Nodes {
 		switch node.ContentType {
 		case "b-video":
@@ -111,19 +114,25 @@ func downloadAttribute(tree *api.TreeNode) error {
 			if fileName == "" {
 				continue
 			}
-			content += genVideoMarkdown(fileName)
+			builder.WriteString(genVideoMarkdown(fileName))
 		case "html":
-			content += fmt.Sprintf("%v", node.HTMLContent)
+			builder.WriteString(fmt.Sprintf("%v", node.HTMLContent))
 		}
 	}
-
+	content := builder.String()
 	if content == "" {
 		return nil
 	}
-	_, err = markdown.Download(context.Background(), content, tree.Name, downFolder, false)
+	exist, err, ss := markdown.Download(context.Background(), content, tree.Name, downFolder, false)
 	if err != nil {
 		return err
 	}
+
+	// 转换成html
+	if !exist && ss != "" {
+		_, _ = markdown.DownloadHtml(context.Background(), ss, tree.Name, downFolder, false)
+	}
+
 	return nil
 }
 

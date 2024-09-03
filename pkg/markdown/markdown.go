@@ -39,16 +39,15 @@ func (ms *markdownString) ReplaceAll(o, n string) {
 }
 
 // Download article as markdown
-func Download(ctx context.Context, content, title, dir string, overwrite bool) (bool, error) {
+func Download(ctx context.Context, content, title, dir string, overwrite bool) (bool, error, string) {
 	select {
 	case <-ctx.Done():
-		return false, context.Canceled
+		return false, context.Canceled, ""
 	default:
 	}
-
-	fullName := path.Join(dir, filenamify.Filenamify(title)+MDExtension)
+	fullName := path.Join(dir, tool.MakeValidFilename(filenamify.Filenamify(title)+MDExtension))
 	if tool.CheckFileExists(fullName) && !overwrite {
-		return true, nil
+		return true, nil, ""
 	}
 
 	// step1: convert to md string
@@ -78,7 +77,7 @@ func Download(ctx context.Context, content, title, dir string, overwrite bool) (
 	})
 	markdown, err := getDefaultConverter().ConvertString(content)
 	if err != nil {
-		return false, err
+		return false, err, ""
 	}
 
 	// step2: download images
@@ -95,7 +94,7 @@ func Download(ctx context.Context, content, title, dir string, overwrite bool) (
 	err = writeImageFile(ctx, imageURLs, dir, imagesFolder, ss)
 
 	if err != nil {
-		return false, err
+		return false, err, ""
 	}
 
 	f, err := os.Create(fullName)
@@ -103,14 +102,14 @@ func Download(ctx context.Context, content, title, dir string, overwrite bool) (
 		_ = f.Close()
 	}()
 	if err != nil {
-		return false, err
+		return false, err, ""
 	}
 	// step3: write md file
 	_, err = f.WriteString("# " + title + "\n" + ss.s)
 	if err != nil {
-		return false, err
+		return false, err, ""
 	}
-	return false, nil
+	return false, nil, ss.s
 }
 
 func findAllImages(md string) (images []string) {
