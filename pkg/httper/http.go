@@ -56,9 +56,9 @@ func setNormalHeader(headers http.Header) {
 	headers.Set("accept-language", "zh-CN,zh;q=0.9")
 	headers.Set("Authorization", config.Config.Authorization)
 	headers.Set("Cookie", config.Config.Cookie)
-	headers.Set("origin", "https://study.sanjieke.cn")
+	headers.Set("origin", "https://study.sanjieke.cn") //fixme:公司账号修改这里
 	headers.Set("priority", "u=1, i")
-	headers.Set("referer", "https://study.sanjieke.cn/")
+	headers.Set("referer", "https://study.sanjieke.cn/") //fixme:公司账号修改这里
 	headers.Set("sec-ch-ua", `"Not)A;Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"`)
 	headers.Set("sec-ch-ua-mobile", "?0")
 	headers.Set("sec-ch-ua-platform", `"Windows"`)
@@ -68,6 +68,6 @@ func setNormalHeader(headers http.Header) {
 	headers.Set("sjk-apikey", config.Config.ApiKey)
 	headers.Set("sjk-platform", "pc")
 	headers.Set("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
-	headers.Set("x-domain-prefix", "cos")
+	headers.Set("x-domain-prefix", "cos") //fixme:公司账号修改这里
 	headers.Set("x-requested-with", "XMLHttpRequest")
 }

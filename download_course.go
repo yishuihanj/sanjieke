@@ -123,16 +123,10 @@ func downloadAttribute(tree *api.TreeNode) error {
 	if content == "" {
 		return nil
 	}
-	exist, err, ss := markdown.Download(context.Background(), content, tree.Name, downFolder, false)
+	_, err = markdown.Download(context.Background(), content, tree.Name, downFolder, false)
 	if err != nil {
 		return err
 	}
-
-	// 转换成html
-	if !exist && ss != "" {
-		_, _ = markdown.DownloadHtml(context.Background(), ss, tree.Name, downFolder, false)
-	}
-
 	return nil
 }
 

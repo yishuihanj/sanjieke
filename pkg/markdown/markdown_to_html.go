@@ -33,7 +33,9 @@ func DownloadHtml(ctx context.Context, content, title, dir string, overwrite boo
 		return false, context.Canceled
 	default:
 	}
-
+	defer func() {
+		_ = recover()
+	}()
 	fullName := path.Join(dir, tool.MakeValidFilename(filenamify.Filenamify(title)+HtmlExtension))
 	if tool.CheckFileExists(fullName) && !overwrite {
 		return true, nil
